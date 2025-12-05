@@ -1,0 +1,1841 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQL日志解析器</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --secondary-color: #3498db;
+            --success-color: #27ae60;
+            --danger-color: #e74c3c;
+            --warning-color: #f39c12;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+            --border-color: #e0e0e0;
+            --text-color: #333;
+            --text-secondary: #666;
+            --code-bg: #f5f7fa;
+            --json-bg: #fff8e1;
+            --input-bg: #f8fafc;
+            --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background-color: var(--background);
+            color: var(--text-color);
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid var(--secondary-color);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            padding: 24px;
+            margin-bottom: 24px;
+            border: 1px solid var(--border-color);
+            transition: transform 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        h2, h3 {
+            color: var(--primary-color);
+            margin-bottom: 0;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+        }
+
+        .btn {
+            background: var(--secondary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .btn:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-reset {
+            background: var(--danger-color);
+        }
+
+        .btn-reset:hover {
+            background: #c0392b;
+        }
+
+        .btn-warning {
+            background: var(--warning-color);
+        }
+
+        .btn-warning:hover {
+            background: #d68910;
+        }
+
+        .btn-success {
+            background: var(--success-color);
+        }
+
+        .btn-success:hover {
+            background: #219653;
+        }
+
+        .btn-info {
+            background: #9b59b6;
+        }
+
+        .btn-info:hover {
+            background: #8e44ad;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .sql-textarea {
+            width: 100%;
+            min-height: 300px;
+            padding: 16px;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--code-bg);
+            resize: vertical;
+            /* 启用自动换行 */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            word-break: break-all;
+            overflow-wrap: break-word;
+        }
+
+        .sql-textarea:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .params-container {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 24px;
+            margin-top: 16px;
+        }
+
+        @media (max-width: 1200px) {
+            .params-container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .json-editor {
+            width: 100%;
+            min-height: 300px;
+            padding: 16px;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--json-bg);
+            resize: vertical;
+        }
+
+        .json-editor:focus {
+            outline: none;
+            border-color: var(--warning-color);
+            box-shadow: 0 0 0 2px rgba(243, 156, 18, 0.2);
+        }
+
+        .params-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 6px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .params-table th {
+            background: #f1f5f9;
+            padding: 12px 16px;
+            text-align: left;
+            font-weight: 600;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--border-color);
+        }
+
+        .params-table td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .params-table tr:hover {
+            background: #f8fafc;
+        }
+
+        .param-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+
+        .param-input:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+
+        .param-type {
+            display: inline-block;
+            padding: 2px 8px;
+            background: #e3f2fd;
+            color: var(--secondary-color);
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .full-sql-container {
+            position: relative;
+        }
+
+        .full-sql {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            border-radius: 6px;
+            padding: 20px;
+            margin-top: 12px;
+            max-height: 500px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            border: 1px solid #333;
+        }
+
+        .sql-keyword {
+            color: #569cd6;
+        }
+
+        .sql-string {
+            color: #ce9178;
+        }
+
+        .sql-number {
+            color: #b5cea8;
+        }
+
+        .sql-comment {
+            color: #6a9955;
+        }
+
+        .sql-param {
+            color: #9cdcfe;
+            background: rgba(156, 220, 254, 0.1);
+            padding: 0 2px;
+            border-radius: 2px;
+        }
+
+        .section-title {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .section-title h3 {
+            margin-bottom: 0;
+        }
+
+        .json-format-btn {
+            background: var(--warning-color);
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .json-format-btn:hover {
+            background: #d68910;
+        }
+
+        .error-message {
+            background: #fee;
+            color: var(--danger-color);
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 8px;
+            border-left: 4px solid var(--danger-color);
+            display: none;
+        }
+
+        .error-message.show {
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+            
+            .card {
+                padding: 16px;
+            }
+            
+            .params-table {
+                font-size: 14px;
+            }
+            
+            .params-table th,
+            .params-table td {
+                padding: 8px 12px;
+            }
+            
+            .controls {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .btn-group {
+                width: 100%;
+            }
+            
+            .btn-group .btn {
+                flex: 1;
+            }
+            
+            .init-inputs {
+                flex-direction: column;
+            }
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+        
+        .notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: var(--success-color);
+            color: white;
+            padding: 12px 24px;
+            border-radius: 4px;
+            box-shadow: var(--shadow);
+            transform: translateX(150%);
+            transition: transform 0.3s ease;
+            z-index: 1000;
+        }
+
+        .notification.show {
+            transform: translateX(0);
+        }
+
+        .notification.error {
+            background: var(--danger-color);
+        }
+
+        .notification.warning {
+            background: var(--warning-color);
+        }
+
+        .notification.info {
+            background: var(--secondary-color);
+        }
+
+        .parse-hint {
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .parse-count {
+            font-weight: bold;
+        }
+        
+        .datetime-input {
+            font-family: 'Monaco', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        
+        .init-inputs {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .init-input {
+            flex: 1;
+        }
+        
+        .init-input label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        
+        .init-textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 12px;
+            font-family: 'Monaco', 'Consolas', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.5;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--input-bg);
+            resize: vertical;
+        }
+        
+        .init-textarea:focus {
+            outline: none;
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+        }
+        
+        .init-example {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+            line-height: 1.4;
+        }
+        
+        .init-example code {
+            background: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .modal.show {
+            display: flex;
+        }
+        
+        .modal-content {
+            background: white;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        
+        .modal-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-body {
+            padding: 24px;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+        }
+        
+        .close-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        .paste-tip {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        
+        .paste-tip code {
+            background: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Consolas', monospace;
+        }
+
+        footer a:hover {
+        background: #e3f2fd;
+        color: #2980b9;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 8px rgba(52, 152, 219, 0.2);
+        }
+
+        footer a:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>SQL日志解析器</h1>
+            <span style="background: #ff6b6b; color: white; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;">
+            KuangMaster
+        </span>
+            <p class="subtitle">编辑SQL语句和参数JSON，实时解析并生成完整SQL - PostgreSQL专用</p>
+        </header>
+
+        <!-- 数据初始化窗口 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>数据初始化</h2>
+                <div class="btn-group">
+                    <button class="btn btn-info" onclick="showQuickPasteModal()">快速粘贴解析</button>
+                    <button class="btn btn-success" onclick="parseInitData()">解析并应用数据</button>
+                </div>
+            </div>
+            
+            <div class="init-inputs">
+                <div class="init-input">
+                    <label for="init-sql-content">SQL内容</label>
+                    <textarea class="init-textarea" id="init-sql-content" placeholder="在此粘贴SQL内容，如：/*自动生成查询SQL*/ SELECT * FROM table WHERE id=@id"></textarea>
+                    <div class="init-example">
+                        示例: <code>/*自动生成查询SQL*/ SELECT * FROM table WHERE id=@id</code>
+                    </div>
+                </div>
+                
+                <div class="init-input">
+                    <label for="init-sql-params">SQL参数</label>
+                    <textarea class="init-textarea" id="init-sql-params" placeholder='在此粘贴SQL参数，如：[{"Name":"@id","PType":"Int32","Value":1}]'></textarea>
+                    <div class="init-example">
+                        示例: <code>[{"Name":"@id","PType":"Int32","Value":1}]</code>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="paste-tip">
+                💡 提示：可以直接粘贴包含 <code>SQL内容:</code> 和 <code>SQL参数:</code> 的完整日志文本，系统会自动识别和解析
+            </div>
+        </div>
+
+        <!-- SQL编辑区 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>SQL语句编辑器</h2>
+                <div class="btn-group">
+                    <button class="btn" onclick="formatSQL()">格式化SQL</button>
+                    <button class="btn" onclick="toggleWordWrap()">切换换行</button>
+                    <button class="btn btn-reset" onclick="resetSQL()">重置SQL</button>
+                </div>
+            </div>
+            <textarea class="sql-textarea" id="sql-editor" placeholder="在此输入或编辑SQL语句，包含@parameter格式的参数..." 
+                      oninput="onSQLChange()"></textarea>
+        </div>
+
+        <!-- 参数编辑区 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>SQL参数管理</h2>
+                <div class="btn-group">
+                    <button class="btn btn-warning" onclick="parseParamsFromJSON()">从JSON解析参数</button>
+                    <button class="btn" onclick="parseParamsFromSQL()">从SQL解析参数</button>
+                    <button class="btn btn-reset" onclick="resetParams()">重置所有参数</button>
+                </div>
+            </div>
+            
+            <div class="params-container">
+                <!-- JSON编辑器 -->
+                <div>
+                    <div class="section-title">
+                        <h3>JSON参数数据</h3>
+                        <button class="json-format-btn" onclick="formatJSON()">格式化JSON</button>
+                    </div>
+                    <textarea class="json-editor" id="json-editor" placeholder='输入JSON格式的参数数组，例如：[{"Name": "@id", "PType": "Int32", "Value": 1}]' 
+                              oninput="onJSONChange()"></textarea>
+                    <div class="parse-hint">
+                        <span>支持JSON格式参数数组，参数将自动解析到右侧表格</span>
+                        <span class="parse-count">已解析参数: <span id="param-count">0</span> 个</span>
+                    </div>
+                    <div class="error-message" id="json-error"></div>
+                </div>
+                
+                <!-- 参数表格 -->
+                <div>
+                    <div class="section-title">
+                        <h3>参数列表</h3>
+                        <button class="btn btn-success" onclick="addNewParam()">+ 添加参数</button>
+                    </div>
+                    <table class="params-table" id="params-table">
+                        <thead>
+                            <tr>
+                                <th>参数名</th>
+                                <th>类型</th>
+                                <th>值</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="params-body">
+                            <!-- 参数行将通过JS动态生成 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 完整SQL预览区 -->
+        <div class="card full-sql-container">
+            <div class="card-header">
+                <h2>完整SQL预览（实时生成）</h2>
+                <div class="btn-group">
+                    <button class="btn btn-success" onclick="copyFullSQL()">复制完整SQL</button>
+                    <button class="btn" onclick="exportSQL()">导出SQL文件</button>
+                </div>
+            </div>
+            <pre class="full-sql" id="full-sql"></pre>
+        </div>
+
+        <!-- 控制按钮 -->
+        <div class="controls">
+            <button class="btn" onclick="loadSampleData()">加载示例数据</button>
+            <button class="btn" onclick="loadExtendedSample()">加载扩展示例</button>
+            <button class="btn" onclick="clearAll()">清空所有数据</button>
+        </div>
+
+        <footer>
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;">
+                <span style="color: var(--text-secondary);">SQL日志解析器 v2.0</span>
+                <span style="color: var(--text-secondary);">|</span>
+                <a href="https://github.com/kuangmaster" target="_blank" style="text-decoration: none; color: #ffffff; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; padding: 8px 20px; border-radius: 12px;  position: relative;overflow: hidden;">
+                    <div style="position: absolute; inset: 0; border-radius: 12px; padding: 1px; background: linear-gradient(135deg, #6c63ff, #ff6584, #36d7b7); -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: 0; transition: opacity 0.4s ease;"></div>
+                    <div style="position: absolute; inset: -2px; border-radius: 14px; background: linear-gradient(135deg, #6c63ff, #ff6584, #36d7b7); filter: blur(12px); opacity: 0; transition: opacity 0.4s ease; z-index: -1;"></div>
+                    <svg t="1764932904284" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg"p-id="2799" width="16" height="16" style="filter: drop-shadow(0 0 4px rgba(18, 7, 228, 0.5));"><path fill="url(#king-gradient)" stroke="url(#king-gradient)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M213.333333 85.333333h170.666667v85.333334H298.666667v85.333333H213.333333V85.333333zM213.333333 512H128V256h85.333333v256zM298.666667 597.333333H213.333333v-85.333333h85.333334v85.333333z" p-id="2800"></path><path fill="url(#king-gradient)" stroke="url(#king-gradient)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M384 682.666667v-85.333334H298.666667v85.333334H128v-85.333334H42.666667v85.333334h85.333333v85.333333h170.666667v170.666667h85.333333v-170.666667h85.333333v-85.333333H384z m0 0v85.333333H298.666667v-85.333333h85.333333z" p-id="2801"></path><path fill="url(#king-gradient)" stroke="url(#king-gradient)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M640 170.666667v85.333333H384V170.666667h256zM810.666667 256h-85.333334V170.666667h-85.333333V85.333333h170.666667v170.666667zM810.666667 512V256h85.333333v256h-85.333333zM725.333333 597.333333v-85.333333h85.333334v85.333333h-85.333334zM640 682.666667v-85.333334h85.333333v85.333334h-85.333333zM640 768h-85.333333v-85.333333h85.333333v85.333333zM640 768h85.333333v170.666667h-85.333333v-170.666667z" p-id="2802"></path><defs> <linearGradient id="king-gradient" x1="0%" y1="0%" x2="100%" y2="100%">  <stop offset="0%" stop-color="#6c63ff" />  <stop offset="50%" stop-color="#ff6584" />  <stop offset="100%" stop-color="#36d7b7" /> </linearGradient></defs></svg>
+                    <span style="background: linear-gradient(135deg, #6c63ff, #ff6584, #36d7b7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; letter-spacing: 1px;">
+                        KUANG
+                    </span>
+                </a>
+                <span style="color: var(--text-secondary);">|</span>
+                <span style="color: var(--text-secondary);">PostgreSQL专用</span>
+            </div>
+            <div style="font-size: 12px; color: #999;">
+                © 2025 数据解析工具 | 高效处理SQL日志
+            </div>
+            </div>
+        </footer>
+
+
+        <!-- 快速粘贴模态框 -->
+        <div class="modal" id="quick-paste-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>快速粘贴解析</h2>
+                    <button class="close-btn" onclick="hideQuickPasteModal()">×</button>
+                </div>
+                <div class="modal-body">
+                    <p>粘贴包含以下格式的完整日志文本：</p>
+                    <pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; margin: 12px 0; font-size: 13px;">
+SQL内容:/*自动生成查询SQL*/ SELECT * FROM qw_base.b_dept WHERE org_id=@org_id AND sno=@sno
+SQL参数:[{"Name":"@org_id","PType":"String","Value":"8167a03e3dcf"},{"Name":"@sno","PType":"Int32","Value":0}]</pre>
+                    
+                    <label for="quick-paste-textarea">粘贴日志文本：</label>
+                    <textarea class="init-textarea" id="quick-paste-textarea" placeholder="在此粘贴完整的日志文本..." style="min-height: 200px; margin-top: 8px;"></textarea>
+                    
+                    <div style="margin-top: 20px; display: flex; gap: 12px; justify-content: flex-end;">
+                        <button class="btn btn-reset" onclick="hideQuickPasteModal()">取消</button>
+                        <button class="btn btn-success" onclick="parseQuickPaste()">解析并应用</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 通知提示 -->
+        <div class="notification" id="notification"></div>
+    </div>
+
+    <script>
+        // 初始化数据
+        const sampleData = {
+            sqlContent: `/*自动生成查询SQL*/ SELECT * FROM public.event_bus_events_subscribe WHERE event_id=@event_id AND type=@type`,
+            sqlParams: [
+                {"Name":"@event_id","PType":"String","Value":"8167a03e3dcf"},
+                {"Name":"@type","PType":"Int32","Value":3}
+            ]
+        };
+
+        // 扩展示例数据（包含DateTime2等类型）
+        const extendedSample = {
+            sqlContent: `SELECT * FROM orders 
+WHERE order_date >= @startTime 
+  AND order_date <= @endTime 
+  AND customer_id = @customerId 
+  AND status IN (@status1, @status2, @status3) 
+  AND total_amount > @minAmount 
+  AND is_active = @isActive
+ORDER BY order_date DESC`,
+            sqlParams: [
+                {
+                    "Name": "@startTime",
+                    "PType": "DateTime2",
+                    "Value": "2025-12-05T00:00:00"
+                },
+                {
+                    "Name": "@endTime",
+                    "PType": "DateTime2",
+                    "Value": "2025-12-05T23:59:59"
+                },
+                {
+                    "Name": "@customerId",
+                    "PType": "Int32",
+                    "Value": 12345
+                },
+                {
+                    "Name": "@status1",
+                    "PType": "String",
+                    "Value": "pending"
+                },
+                {
+                    "Name": "@status2",
+                    "PType": "String",
+                    "Value": "processing"
+                },
+                {
+                    "Name": "@status3",
+                    "PType": "String",
+                    "Value": "completed"
+                },
+                {
+                    "Name": "@minAmount",
+                    "PType": "Decimal",
+                    "Value": 100.50
+                },
+                {
+                    "Name": "@isActive",
+                    "PType": "Boolean",
+                    "Value": true
+                }
+            ]
+        };
+
+        // 存储当前状态
+        let currentSQL = sampleData.sqlContent;
+        let currentParams = [...sampleData.sqlParams];
+        let wrapEnabled = true; // 默认启用自动换行
+
+        // 初始化页面
+        function initPage() {
+            // 设置初始化窗口的示例数据
+            const initExample = {
+                sqlContent: "/*自动生成查询SQL*/ SELECT * FROM public.event_bus_events_subscribe WHERE event_id=@event_id AND type=@type",
+                sqlParams: '[{"Name":"@event_id","PType":"String","Value":"5899b07e-176f-9a3e-a327-8167a03e3dcf"},{"Name":"@type","PType":"Int32","Value":3}]'
+            };
+            
+            document.getElementById('init-sql-content').value = initExample.sqlContent;
+            document.getElementById('init-sql-params').value = initExample.sqlParams;
+            
+            // 设置SQL编辑器
+            document.getElementById('sql-editor').value = currentSQL;
+            
+            // 设置JSON编辑器
+            document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+            
+            // 渲染参数表格
+            renderParamsTable();
+            
+            // 初始渲染完整SQL
+            renderFullSQL();
+        }
+
+        // 显示快速粘贴模态框
+        function showQuickPasteModal() {
+            document.getElementById('quick-paste-modal').classList.add('show');
+            document.getElementById('quick-paste-textarea').focus();
+        }
+
+        // 隐藏快速粘贴模态框
+        function hideQuickPasteModal() {
+            document.getElementById('quick-paste-modal').classList.remove('show');
+            document.getElementById('quick-paste-textarea').value = '';
+        }
+
+        // 解析快速粘贴的内容
+        function parseQuickPaste() {
+            const pasteText = document.getElementById('quick-paste-textarea').value.trim();
+            
+            if (!pasteText) {
+                showNotification('请输入要解析的日志文本', true);
+                return;
+            }
+            
+            try {
+                const { sqlContent, sqlParams } = parseLogText(pasteText);
+                
+                if (sqlContent) {
+                    document.getElementById('init-sql-content').value = sqlContent;
+                }
+                
+                if (sqlParams) {
+                    document.getElementById('init-sql-params').value = sqlParams;
+                }
+                
+                hideQuickPasteModal();
+                parseInitData();
+                
+                showNotification('日志文本解析成功并已应用');
+            } catch (error) {
+                showNotification(`解析失败: ${error.message}`, true);
+            }
+        }
+
+        // 解析日志文本
+        function parseLogText(text) {
+            const result = {
+                sqlContent: '',
+                sqlParams: ''
+            };
+            
+            // 解析SQL内容
+            const sqlContentMatch = text.match(/SQL内容[:：]\s*(.+?)(?=\s*(?:SQL参数|$))/s);
+            if (sqlContentMatch && sqlContentMatch[1]) {
+                result.sqlContent = sqlContentMatch[1].trim();
+            }
+            
+            // 解析SQL参数
+            const sqlParamsMatch = text.match(/SQL参数[:：]\s*(.+?)(?=\s*(?:$))/s);
+            if (sqlParamsMatch && sqlParamsMatch[1]) {
+                result.sqlParams = sqlParamsMatch[1].trim();
+            }
+            
+            // 如果没有匹配到标准格式，尝试其他格式
+            if (!result.sqlContent) {
+                // 尝试查找包含@parameter的SQL语句
+                const sqlMatch = text.match(/(SELECT|INSERT|UPDATE|DELETE|WITH).+?(?=\s*(?:$|\[|\{))/is);
+                if (sqlMatch) {
+                    result.sqlContent = sqlMatch[0].trim();
+                }
+            }
+            
+            if (!result.sqlParams) {
+                // 尝试查找JSON数组
+                const jsonMatch = text.match(/\[(\s*\{.*?\}\s*,?\s*)+\]/s);
+                if (jsonMatch) {
+                    result.sqlParams = jsonMatch[0].trim();
+                }
+            }
+            
+            return result;
+        }
+
+        // 解析并应用初始化数据
+        function parseInitData() {
+            const sqlContentInput = document.getElementById('init-sql-content').value.trim();
+            const sqlParamsInput = document.getElementById('init-sql-params').value.trim();
+            
+            let hasError = false;
+            
+            // 处理SQL内容
+            if (sqlContentInput) {
+                currentSQL = sqlContentInput;
+                document.getElementById('sql-editor').value = currentSQL;
+            } else {
+                showNotification('SQL内容不能为空', true);
+                hasError = true;
+            }
+            
+            // 处理SQL参数
+            if (sqlParamsInput) {
+                try {
+                    // 尝试解析JSON
+                    const paramsText = sqlParamsInput.trim();
+                    let jsonData;
+                    
+                    // 支持多种JSON格式
+                    if (paramsText.startsWith('[')) {
+                        jsonData = JSON.parse(paramsText);
+                        if (!Array.isArray(jsonData)) {
+                            throw new Error('SQL参数必须是JSON数组格式');
+                        }
+                    } else if (paramsText.startsWith('{')) {
+                        jsonData = [JSON.parse(paramsText)];
+                    } else {
+                        // 尝试去掉可能的中括号和引号
+                        const cleanText = paramsText.replace(/^\[|\]$/g, '').trim();
+                        if (cleanText.startsWith('{')) {
+                            jsonData = [JSON.parse(cleanText)];
+                        } else {
+                            throw new Error('SQL参数格式不正确');
+                        }
+                    }
+                    
+                    // 标准化参数
+                    const validParams = jsonData.map((item, index) => {
+                        if (!item || typeof item !== 'object') {
+                            throw new Error(`第${index + 1}个参数不是有效的对象`);
+                        }
+                        
+                        // 兼容不同的属性名大小写
+                        const name = item.Name || item.name;
+                        const ptype = item.PType || item.ptype || item.Type || item.type;
+                        const value = item.Value !== undefined ? item.Value : item.value;
+                        
+                        if (!name || typeof name !== 'string') {
+                            throw new Error(`第${index + 1}个参数缺少有效的Name字段`);
+                        }
+                        
+                        // 标准化参数名
+                        const normalizedName = name.startsWith('@') ? name : '@' + name;
+                        
+                        // 标准化类型
+                        let normalizedType = 'String';
+                        if (ptype) {
+                            const typeLower = ptype.toLowerCase();
+                            if (typeLower.includes('int') && typeLower.includes('32')) {
+                                normalizedType = 'Int32';
+                            } else if (typeLower.includes('int') && typeLower.includes('64')) {
+                                normalizedType = 'Int64';
+                            } else if (typeLower.includes('decimal') || typeLower.includes('numeric')) {
+                                normalizedType = 'Decimal';
+                            } else if (typeLower.includes('float') || typeLower.includes('double')) {
+                                normalizedType = 'Float';
+                            } else if (typeLower.includes('bool')) {
+                                normalizedType = 'Boolean';
+                            } else if (typeLower.includes('date') || typeLower.includes('time')) {
+                                normalizedType = typeLower.includes('2') ? 'DateTime2' : 'DateTime';
+                            } else {
+                                normalizedType = ptype;
+                            }
+                        }
+                        
+                        return {
+                            Name: normalizedName,
+                            PType: normalizedType,
+                            Value: value === undefined ? '' : value
+                        };
+                    });
+                    
+                    currentParams = validParams;
+                    document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+                    
+                    // 渲染参数表格
+                    renderParamsTable();
+                    
+                } catch (error) {
+                    showNotification(`SQL参数解析失败: ${error.message}`, true);
+                    hasError = true;
+                }
+            } else {
+                // 如果没有参数，清空当前参数
+                currentParams = [];
+                document.getElementById('json-editor').value = '[]';
+                renderParamsTable();
+            }
+            
+            // 重新渲染完整SQL
+            renderFullSQL();
+            
+            if (!hasError) {
+                showNotification('初始化数据已成功解析并应用');
+            }
+        }
+
+        // 切换换行模式
+        function toggleWordWrap() {
+            const textarea = document.getElementById('sql-editor');
+            wrapEnabled = !wrapEnabled;
+            
+            if (wrapEnabled) {
+                // 启用自动换行
+                textarea.style.whiteSpace = 'pre-wrap';
+                textarea.style.wordWrap = 'break-word';
+                textarea.style.wordBreak = 'break-all';
+                textarea.style.overflowWrap = 'break-word';
+                textarea.style.overflowX = 'hidden';
+                showNotification('已启用自动换行');
+            } else {
+                // 禁用自动换行，显示横向滚动条
+                textarea.style.whiteSpace = 'pre';
+                textarea.style.wordWrap = 'normal';
+                textarea.style.wordBreak = 'normal';
+                textarea.style.overflowWrap = 'normal';
+                textarea.style.overflowX = 'auto';
+                showNotification('已禁用自动换行（显示横向滚动条）');
+            }
+        }
+
+        // SQL变化时的处理
+        function onSQLChange() {
+            currentSQL = document.getElementById('sql-editor').value;
+            renderFullSQL();
+        }
+
+        // JSON变化时的处理
+        function onJSONChange() {
+            const jsonEditor = document.getElementById('json-editor');
+            const errorDiv = document.getElementById('json-error');
+            
+            try {
+                if (jsonEditor.value.trim()) {
+                    let jsonData;
+                    
+                    // 尝试解析JSON，支持多种格式
+                    const jsonText = jsonEditor.value.trim();
+                    
+                    // 检查是否是数组
+                    if (jsonText.startsWith('[')) {
+                        jsonData = JSON.parse(jsonText);
+                        if (!Array.isArray(jsonData)) {
+                            throw new Error('JSON数据必须是数组格式');
+                        }
+                    } 
+                    // 检查是否是单个对象
+                    else if (jsonText.startsWith('{')) {
+                        const singleObj = JSON.parse(jsonText);
+                        jsonData = [singleObj];
+                    } 
+                    // 其他格式报错
+                    else {
+                        throw new Error('JSON格式不正确，应为数组或对象');
+                    }
+                    
+                    // 验证和标准化JSON结构
+                    const validParams = jsonData.map((item, index) => {
+                        if (!item || typeof item !== 'object') {
+                            throw new Error(`第${index + 1}个参数不是有效的对象`);
+                        }
+                        
+                        // 兼容不同的属性名大小写
+                        const name = item.Name || item.name;
+                        const ptype = item.PType || item.ptype || item.Type || item.type;
+                        const value = item.Value !== undefined ? item.Value : item.value;
+                        
+                        if (!name || typeof name !== 'string') {
+                            throw new Error(`第${index + 1}个参数缺少有效的Name字段`);
+                        }
+                        
+                        // 标准化参数名（确保以@开头）
+                        const normalizedName = name.startsWith('@') ? name : '@' + name;
+                        
+                        // 标准化类型
+                        let normalizedType = 'String'; // 默认类型
+                        if (ptype) {
+                            // 处理常见的类型变体
+                            const typeLower = ptype.toLowerCase();
+                            if (typeLower.includes('int') && typeLower.includes('32')) {
+                                normalizedType = 'Int32';
+                            } else if (typeLower.includes('int') && typeLower.includes('64')) {
+                                normalizedType = 'Int64';
+                            } else if (typeLower.includes('decimal') || typeLower.includes('numeric')) {
+                                normalizedType = 'Decimal';
+                            } else if (typeLower.includes('float') || typeLower.includes('double')) {
+                                normalizedType = 'Float';
+                            } else if (typeLower.includes('bool')) {
+                                normalizedType = 'Boolean';
+                            } else if (typeLower.includes('date') || typeLower.includes('time')) {
+                                // 支持各种日期时间类型
+                                normalizedType = typeLower.includes('2') ? 'DateTime2' : 'DateTime';
+                            } else if (typeLower.includes('string') || typeLower.includes('varchar') || typeLower.includes('text')) {
+                                normalizedType = 'String';
+                            } else {
+                                normalizedType = ptype; // 保持原样
+                            }
+                        }
+                        
+                        return {
+                            Name: normalizedName,
+                            PType: normalizedType,
+                            Value: value === undefined ? '' : value
+                        };
+                    });
+                    
+                    currentParams = validParams;
+                    renderParamsTable();
+                    renderFullSQL();
+                    errorDiv.classList.remove('show');
+                }
+            } catch (error) {
+                errorDiv.textContent = `JSON解析错误: ${error.message}`;
+                errorDiv.classList.add('show');
+            }
+        }
+
+        // 从JSON解析参数（手动触发）
+        function parseParamsFromJSON() {
+            const jsonEditor = document.getElementById('json-editor');
+            const errorDiv = document.getElementById('json-error');
+            
+            try {
+                if (jsonEditor.value.trim()) {
+                    let jsonData;
+                    const jsonText = jsonEditor.value.trim();
+                    
+                    // 支持多种JSON格式
+                    if (jsonText.startsWith('[')) {
+                        jsonData = JSON.parse(jsonText);
+                        if (!Array.isArray(jsonData)) {
+                            throw new Error('JSON数据必须是数组格式');
+                        }
+                    } else if (jsonText.startsWith('{')) {
+                        const singleObj = JSON.parse(jsonText);
+                        jsonData = [singleObj];
+                    } else {
+                        throw new Error('JSON格式不正确，应为数组或对象');
+                    }
+                    
+                    // 验证和标准化JSON结构
+                    const validParams = jsonData.map((item, index) => {
+                        if (!item || typeof item !== 'object') {
+                            throw new Error(`第${index + 1}个参数不是有效的对象`);
+                        }
+                        
+                        // 兼容不同的属性名大小写
+                        const name = item.Name || item.name;
+                        const ptype = item.PType || item.ptype || item.Type || item.type;
+                        const value = item.Value !== undefined ? item.Value : item.value;
+                        
+                        if (!name || typeof name !== 'string') {
+                            throw new Error(`第${index + 1}个参数缺少有效的Name字段`);
+                        }
+                        
+                        // 标准化参数名
+                        const normalizedName = name.startsWith('@') ? name : '@' + name;
+                        
+                        // 标准化类型
+                        let normalizedType = 'String';
+                        if (ptype) {
+                            const typeLower = ptype.toLowerCase();
+                            if (typeLower.includes('int') && typeLower.includes('32')) {
+                                normalizedType = 'Int32';
+                            } else if (typeLower.includes('int') && typeLower.includes('64')) {
+                                normalizedType = 'Int64';
+                            } else if (typeLower.includes('decimal') || typeLower.includes('numeric')) {
+                                normalizedType = 'Decimal';
+                            } else if (typeLower.includes('float') || typeLower.includes('double')) {
+                                normalizedType = 'Float';
+                            } else if (typeLower.includes('bool')) {
+                                normalizedType = 'Boolean';
+                            } else if (typeLower.includes('date') || typeLower.includes('time')) {
+                                normalizedType = typeLower.includes('2') ? 'DateTime2' : 'DateTime';
+                            } else if (typeLower.includes('string') || typeLower.includes('varchar') || typeLower.includes('text')) {
+                                normalizedType = 'String';
+                            } else {
+                                normalizedType = ptype;
+                            }
+                        }
+                        
+                        return {
+                            Name: normalizedName,
+                            PType: normalizedType,
+                            Value: value === undefined ? '' : value
+                        };
+                    });
+                    
+                    currentParams = validParams;
+                    renderParamsTable();
+                    renderFullSQL();
+                    
+                    // 更新JSON编辑器（标准化格式）
+                    jsonEditor.value = JSON.stringify(currentParams, null, 2);
+                    
+                    errorDiv.classList.remove('show');
+                    showNotification(`从JSON成功解析 ${validParams.length} 个参数`);
+                } else {
+                    showNotification('JSON编辑器为空，请输入JSON数据', true);
+                }
+            } catch (error) {
+                errorDiv.textContent = `JSON解析错误: ${error.message}`;
+                errorDiv.classList.add('show');
+                showNotification('JSON解析失败，请检查格式', true);
+            }
+        }
+
+        // 从SQL语句中解析参数
+        function parseParamsFromSQL() {
+            const sql = document.getElementById('sql-editor').value;
+            
+            // 提取所有@开头的参数名
+            const paramRegex = /@[a-zA-Z_][a-zA-Z0-9_]*/g;
+            const matches = sql.match(paramRegex);
+            
+            if (matches) {
+                // 去重并创建参数对象
+                const uniqueParams = [...new Set(matches)];
+                const newParams = uniqueParams.map(paramName => {
+                    // 检查是否已存在该参数
+                    const existingParam = currentParams.find(p => p.Name === paramName);
+                    if (existingParam) {
+                        return existingParam;
+                    }
+                    
+                    // 创建新参数
+                    return {
+                        Name: paramName,
+                        PType: 'String', // 默认类型
+                        Value: ''
+                    };
+                });
+                
+                currentParams = newParams;
+                renderParamsTable();
+                
+                // 更新JSON编辑器
+                document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+                
+                showNotification(`从SQL语句中解析出 ${newParams.length} 个参数`);
+            } else {
+                showNotification('SQL语句中没有找到参数（@parameter格式）', true);
+            }
+        }
+
+        // 渲染参数表格
+        function renderParamsTable() {
+            const paramsBody = document.getElementById('params-body');
+            paramsBody.innerHTML = '';
+
+            currentParams.forEach((param, index) => {
+                const isDateTimeType = param.PType.includes('DateTime') || param.PType.includes('date') || param.PType.includes('time');
+                
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>
+                        <input type="text" 
+                               class="param-input" 
+                               value="${param.Name}" 
+                               data-field="name"
+                               data-index="${index}"
+                               onchange="updateParamField(${index}, 'Name', this.value)">
+                    </td>
+                    <td>
+                        <select class="param-input" 
+                                data-field="type"
+                                data-index="${index}"
+                                onchange="updateParamField(${index}, 'PType', this.value)">
+                            <option value="String" ${param.PType === 'String' ? 'selected' : ''}>String</option>
+                            <option value="Int32" ${param.PType === 'Int32' ? 'selected' : ''}>Int32</option>
+                            <option value="Int64" ${param.PType === 'Int64' ? 'selected' : ''}>Int64</option>
+                            <option value="Decimal" ${param.PType === 'Decimal' ? 'selected' : ''}>Decimal</option>
+                            <option value="Float" ${param.PType === 'Float' ? 'selected' : ''}>Float</option>
+                            <option value="Boolean" ${param.PType === 'Boolean' ? 'selected' : ''}>Boolean</option>
+                            <option value="DateTime" ${param.PType === 'DateTime' ? 'selected' : ''}>DateTime</option>
+                            <option value="DateTime2" ${param.PType === 'DateTime2' ? 'selected' : ''}>DateTime2</option>
+                            <option value="Date" ${param.PType === 'Date' ? 'selected' : ''}>Date</option>
+                            <option value="Time" ${param.PType === 'Time' ? 'selected' : ''}>Time</option>
+                        </select>
+                    </td>
+                    <td>
+                        ${isDateTimeType ? `
+                            <input type="datetime-local" 
+                                   class="param-input datetime-input" 
+                                   value="${formatDateTimeForInput(param.Value)}" 
+                                   data-field="value"
+                                   data-index="${index}"
+                                   onchange="updateParamField(${index}, 'Value', this.value)">
+                        ` : `
+                            <input type="text" 
+                                   class="param-input" 
+                                   value="${param.Value || ''}" 
+                                   data-field="value"
+                                   data-index="${index}"
+                                   onchange="updateParamField(${index}, 'Value', this.value)">
+                        `}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn" onclick="moveParamUp(${index})" ${index === 0 ? 'disabled' : ''} title="上移">↑</button>
+                            <button class="btn" onclick="moveParamDown(${index})" ${index === currentParams.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+                            <button class="btn btn-reset" onclick="removeParam(${index})" title="删除">×</button>
+                        </div>
+                    </td>
+                `;
+                paramsBody.appendChild(row);
+            });
+
+            // 更新参数计数
+            document.getElementById('param-count').textContent = currentParams.length;
+
+            // 如果没有参数，显示提示
+            if (currentParams.length === 0) {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 40px;">
+                        没有参数，请添加或从JSON/SQL解析参数
+                    </td>
+                `;
+                paramsBody.appendChild(row);
+            }
+        }
+
+        // 格式化日期时间用于input[type="datetime-local"]
+        function formatDateTimeForInput(dateTimeStr) {
+            if (!dateTimeStr) return '';
+            
+            try {
+                // 尝试解析各种日期时间格式
+                let date;
+                
+                if (typeof dateTimeStr === 'string') {
+                    // 移除可能的引号
+                    const cleanStr = dateTimeStr.replace(/^['"]|['"]$/g, '');
+                    
+                    // 尝试解析ISO格式
+                    date = new Date(cleanStr);
+                    
+                    // 如果解析失败，尝试其他格式
+                    if (isNaN(date.getTime())) {
+                        // 尝试yyyy-MM-dd HH:mm:ss格式
+                        const match = cleanStr.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+                        if (match) {
+                            date = new Date(match[1], match[2] - 1, match[3], match[4], match[5], match[6]);
+                        }
+                    }
+                } else if (dateTimeStr instanceof Date) {
+                    date = dateTimeStr;
+                } else {
+                    return '';
+                }
+                
+                if (isNaN(date.getTime())) {
+                    return '';
+                }
+                
+                // 转换为datetime-local需要的格式：YYYY-MM-DDTHH:mm
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            } catch (error) {
+                console.error('日期时间格式化错误:', error);
+                return '';
+            }
+        }
+
+        // 更新参数字段
+        function updateParamField(index, field, value) {
+            if (index >= 0 && index < currentParams.length) {
+                // 根据字段类型进行验证和转换
+                if (field === 'Name') {
+                    // 确保参数名以@开头
+                    if (!value.startsWith('@')) {
+                        value = '@' + value;
+                    }
+                    currentParams[index][field] = value;
+                    
+                    // 更新输入框显示
+                    const input = document.querySelector(`input[data-index="${index}"][data-field="name"]`);
+                    if (input) {
+                        input.value = value;
+                    }
+                } else if (field === 'Value') {
+                    // 根据参数类型验证值
+                    const paramType = currentParams[index].PType;
+                    let validatedValue = value;
+                    
+                    if (paramType === 'Int32' || paramType === 'Int64') {
+                        validatedValue = parseInt(value) || 0;
+                    } else if (paramType === 'Decimal' || paramType === 'Float') {
+                        validatedValue = parseFloat(value) || 0;
+                    } else if (paramType === 'Boolean') {
+                        if (typeof value === 'string') {
+                            validatedValue = value.toLowerCase() === 'true' || value === '1';
+                        } else {
+                            validatedValue = Boolean(value);
+                        }
+                    } else if (paramType.includes('DateTime') || paramType.includes('Date') || paramType.includes('Time')) {
+                        // 日期时间类型处理
+                        if (value) {
+                            // 如果是datetime-local输入，已经是正确的格式
+                            validatedValue = value;
+                        } else {
+                            validatedValue = '';
+                        }
+                    } else if (paramType === 'String') {
+                        // 移除可能的多余引号
+                        validatedValue = value.replace(/^['"]|['"]$/g, '');
+                    }
+                    
+                    currentParams[index][field] = validatedValue;
+                    
+                    // 更新输入框显示
+                    const input = document.querySelector(`[data-index="${index}"][data-field="value"]`);
+                    if (input) {
+                        if (paramType.includes('DateTime') || paramType.includes('Date') || paramType.includes('Time')) {
+                            input.value = formatDateTimeForInput(validatedValue);
+                        } else {
+                            input.value = validatedValue;
+                        }
+                    }
+                } else if (field === 'PType') {
+                    const oldType = currentParams[index].PType;
+                    currentParams[index][field] = value;
+                    
+                    // 如果类型从非日期时间改为日期时间，或反之，需要特殊处理
+                    const wasDateTime = oldType.includes('DateTime') || oldType.includes('Date') || oldType.includes('Time');
+                    const isDateTime = value.includes('DateTime') || value.includes('Date') || value.includes('Time');
+                    
+                    if (wasDateTime !== isDateTime) {
+                        // 类型变化较大，需要重新渲染表格行
+                        renderParamsTable();
+                    } else if (currentParams[index].Value !== undefined) {
+                        // 同一大类内的类型变化，更新值
+                        updateParamField(index, 'Value', currentParams[index].Value);
+                    }
+                }
+                
+                // 更新JSON编辑器
+                document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+                
+                // 重新渲染完整SQL
+                renderFullSQL();
+            }
+        }
+
+        // 添加新参数
+        function addNewParam() {
+            const newParam = {
+                Name: `@param_${currentParams.length + 1}`,
+                PType: 'String',
+                Value: ''
+            };
+            
+            currentParams.push(newParam);
+            renderParamsTable();
+            
+            // 更新JSON编辑器
+            document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+            
+            // 滚动到新添加的行
+            const paramsBody = document.getElementById('params-body');
+            const lastRow = paramsBody.lastElementChild;
+            if (lastRow) {
+                lastRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+            
+            showNotification('已添加新参数');
+        }
+
+        // 移除参数
+        function removeParam(index) {
+            if (index >= 0 && index < currentParams.length) {
+                const paramName = currentParams[index].Name;
+                currentParams.splice(index, 1);
+                renderParamsTable();
+                
+                // 更新JSON编辑器
+                document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+                
+                // 重新渲染完整SQL
+                renderFullSQL();
+                
+                showNotification(`已删除参数: ${paramName}`);
+            }
+        }
+
+        // 移动参数位置
+        function moveParamUp(index) {
+            if (index > 0 && index < currentParams.length) {
+                const temp = currentParams[index];
+                currentParams[index] = currentParams[index - 1];
+                currentParams[index - 1] = temp;
+                renderParamsTable();
+                renderFullSQL();
+            }
+        }
+
+        function moveParamDown(index) {
+            if (index >= 0 && index < currentParams.length - 1) {
+                const temp = currentParams[index];
+                currentParams[index] = currentParams[index + 1];
+                currentParams[index + 1] = temp;
+                renderParamsTable();
+                renderFullSQL();
+            }
+        }
+
+        // 重置所有参数
+        function resetParams() {
+            currentParams = [];
+            renderParamsTable();
+            document.getElementById('json-editor').value = '[]';
+            renderFullSQL();
+            showNotification('已重置所有参数');
+        }
+
+        // 重置SQL
+        function resetSQL() {
+            currentSQL = sampleData.sqlContent;
+            document.getElementById('sql-editor').value = currentSQL;
+            renderFullSQL();
+            showNotification('SQL已重置为示例数据');
+        }
+
+        // 格式化JSON
+        function formatJSON() {
+            const jsonEditor = document.getElementById('json-editor');
+            const errorDiv = document.getElementById('json-error');
+            
+            try {
+                if (jsonEditor.value.trim()) {
+                    let jsonData;
+                    const jsonText = jsonEditor.value.trim();
+                    
+                    if (jsonText.startsWith('[')) {
+                        jsonData = JSON.parse(jsonText);
+                    } else if (jsonText.startsWith('{')) {
+                        jsonData = [JSON.parse(jsonText)];
+                    } else {
+                        throw new Error('JSON格式不正确');
+                    }
+                    
+                    jsonEditor.value = JSON.stringify(jsonData, null, 2);
+                    errorDiv.classList.remove('show');
+                    showNotification('JSON已格式化');
+                }
+            } catch (error) {
+                errorDiv.textContent = `JSON格式化错误: ${error.message}`;
+                errorDiv.classList.add('show');
+            }
+        }
+
+        // 格式化SQL
+        function formatSQL() {
+            const sqlEditor = document.getElementById('sql-editor');
+            let sql = sqlEditor.value;
+            
+            // 简单的SQL格式化规则
+            sql = sql
+                .replace(/\b(SELECT|FROM|WHERE|JOIN|LEFT|RIGHT|INNER|OUTER|ON|AND|OR|ORDER BY|GROUP BY|HAVING|CASE|WHEN|THEN|ELSE|END)\b/gi, '\n$1')
+                .replace(/,/g, ',\n    ')
+                .replace(/\n\s*\n/g, '\n')
+                .replace(/^\s+/gm, '    ');
+            
+            sqlEditor.value = sql;
+            currentSQL = sql;
+            renderFullSQL();
+            showNotification('SQL已格式化');
+        }
+
+        // 渲染完整SQL（替换参数）
+        function renderFullSQL() {
+            let fullSQL = currentSQL;
+            
+            // 按参数名长度降序排序，避免替换时出现部分匹配问题
+            const sortedParams = [...currentParams].sort((a, b) => b.Name.length - a.Name.length);
+            
+            sortedParams.forEach(param => {
+                // 根据参数类型格式化值
+                let formattedValue;
+                const paramType = param.PType.toLowerCase();
+                
+                if (paramType.includes('string') || paramType.includes('varchar') || paramType.includes('text')) {
+                    formattedValue = `'${param.Value}'`;
+                } else if (paramType.includes('date') || paramType.includes('time')) {
+                    // 日期时间类型
+                    if (param.Value) {
+                        // 尝试格式化为PostgreSQL日期时间格式
+                        try {
+                            const dateStr = param.Value.toString().replace(/^['"]|['"]$/g, '');
+                            if (dateStr.includes('T') || dateStr.includes(' ')) {
+                                // ISO格式或类似格式
+                                formattedValue = `'${dateStr}'`;
+                            } else {
+                                formattedValue = `'${param.Value}'`;
+                            }
+                        } catch (error) {
+                            formattedValue = `'${param.Value}'`;
+                        }
+                    } else {
+                        formattedValue = 'NULL';
+                    }
+                } else if (paramType.includes('bool')) {
+                    formattedValue = param.Value ? 'TRUE' : 'FALSE';
+                } else if (param.Value === '' || param.Value === null || param.Value === undefined) {
+                    formattedValue = 'NULL';
+                } else {
+                    formattedValue = param.Value;
+                }
+                
+                // 使用正则表达式进行全局替换
+                const regex = new RegExp(param.Name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+                fullSQL = fullSQL.replace(regex, formattedValue);
+            });
+            
+            // 应用语法高亮
+            document.getElementById('full-sql').innerHTML = highlightSQL(fullSQL);
+        }
+
+        // SQL语法高亮
+        function highlightSQL(sql) {
+            // SQL关键字
+            const keywords = [
+                'select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer',
+                'on', 'and', 'or', 'not', 'in', 'like', 'between', 'is', 'null',
+                'case', 'when', 'then', 'else', 'end', 'as', 'order', 'by', 'desc',
+                'asc', 'group', 'having', 'insert', 'into', 'update', 'delete',
+                'create', 'table', 'view', 'index', 'drop', 'alter', 'add', 'column',
+                'primary', 'key', 'foreign', 'references', 'unique', 'check', 'default',
+                'values', 'set', 'distinct', 'count', 'sum', 'avg', 'min', 'max',
+                'coalesce', 'cast', 'convert', 'type', 'with', 'recursive', 'union',
+                'all', 'exists', 'any', 'some'
+            ];
+            
+            let highlighted = sql;
+            
+            // 注释
+            highlighted = highlighted.replace(/\/\*[\s\S]*?\*\//g, '<span class="sql-comment">$&</span>');
+            highlighted = highlighted.replace(/--.*$/gm, '<span class="sql-comment">$&</span>');
+            
+            // 字符串
+            highlighted = highlighted.replace(/'([^'\\]*(\\.[^'\\]*)*)'/g, '<span class="sql-string">\'$1\'</span>');
+            
+            // 数字
+            highlighted = highlighted.replace(/\b\d+(\.\d+)?\b/g, '<span class="sql-number">$&</span>');
+            
+            // 关键字
+            keywords.forEach(keyword => {
+                const regex = new RegExp(`\\b${keyword}\\b`, 'gi');
+                highlighted = highlighted.replace(regex, '<span class="sql-keyword">$&</span>');
+            });
+            
+            return highlighted;
+        }
+
+        // 复制完整SQL到剪贴板
+        function copyFullSQL() {
+            const fullSQLText = document.getElementById('full-sql').textContent;
+            
+            navigator.clipboard.writeText(fullSQLText)
+                .then(() => {
+                    showNotification('完整SQL已复制到剪贴板');
+                })
+                .catch(err => {
+                    console.error('复制失败:', err);
+                    showNotification('复制失败，请手动选择并复制', true);
+                });
+        }
+
+        // 导出SQL文件
+        function exportSQL() {
+            const fullSQLText = document.getElementById('full-sql').textContent;
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
+            const filename = `sql_export_${timestamp}.sql`;
+            
+            const blob = new Blob([fullSQLText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('SQL文件已导出');
+        }
+
+        // 加载示例数据
+        function loadSampleData() {
+            currentSQL = sampleData.sqlContent;
+            currentParams = JSON.parse(JSON.stringify(sampleData.sqlParams));
+            
+            document.getElementById('sql-editor').value = currentSQL;
+            document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+            
+            // 同时更新初始化窗口
+            document.getElementById('init-sql-content').value = currentSQL;
+            document.getElementById('init-sql-params').value = JSON.stringify(currentParams, null, 2);
+            
+            renderParamsTable();
+            renderFullSQL();
+            
+            showNotification('示例数据已加载');
+        }
+
+        // 加载扩展示例
+        function loadExtendedSample() {
+            currentSQL = extendedSample.sqlContent;
+            currentParams = JSON.parse(JSON.stringify(extendedSample.sqlParams));
+            
+            document.getElementById('sql-editor').value = currentSQL;
+            document.getElementById('json-editor').value = JSON.stringify(currentParams, null, 2);
+            
+            // 同时更新初始化窗口
+            document.getElementById('init-sql-content').value = currentSQL;
+            document.getElementById('init-sql-params').value = JSON.stringify(currentParams, null, 2);
+            
+            renderParamsTable();
+            renderFullSQL();
+            
+            showNotification('扩展示例已加载（包含DateTime2等类型）');
+        }
+
+        // 清空所有数据
+        function clearAll() {
+            if (confirm('确定要清空所有数据吗？这包括SQL语句和所有参数。')) {
+                currentSQL = '';
+                currentParams = [];
+                
+                document.getElementById('sql-editor').value = '';
+                document.getElementById('json-editor').value = '[]';
+                document.getElementById('init-sql-content').value = '';
+                document.getElementById('init-sql-params').value = '';
+                
+                renderParamsTable();
+                renderFullSQL();
+                
+                showNotification('所有数据已清空');
+            }
+        }
+
+        // 显示通知提示
+        function showNotification(message, isError = false) {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            notification.className = 'notification';
+            notification.classList.add('show');
+            
+            if (isError) {
+                notification.classList.add('error');
+            } else if (message.includes('禁用')) {
+                notification.classList.add('warning');
+            } else if (message.includes('快速粘贴') || message.includes('初始化')) {
+                notification.classList.add('info');
+            }
+            
+            setTimeout(() => {
+                notification.classList.remove('show');
+            }, 3000);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initPage);
+
+        // 公开API供扩展使用
+        window.SQLLogParser = {
+            getCurrentSQL: () => currentSQL,
+            getCurrentParams: () => currentParams,
+            setSQL: (sql) => {
+                currentSQL = sql;
+                document.getElementById('sql-editor').value = sql;
+                renderFullSQL();
+            },
+            setParams: (params) => {
+                currentParams = params;
+                document.getElementById('json-editor').value = JSON.stringify(params, null, 2);
+                renderParamsTable();
+                renderFullSQL();
+            },
+            toggleWordWrap: toggleWordWrap,
+            parseLogText: parseLogText
+        };
+    </script>
+</body>
+</html>
